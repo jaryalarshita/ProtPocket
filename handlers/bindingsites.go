@@ -186,7 +186,7 @@ func BindingSiteHandler(ctx *gofr.Context) (interface{}, error) {
 			pockets[idx].Fragments = services.FetchFragments(pockets[idx])
 		}(i)
 	}
-	
+
 	for i := range monomerPockets {
 		fragWg.Add(1)
 		go func(idx int) {
@@ -195,6 +195,8 @@ func BindingSiteHandler(ctx *gofr.Context) (interface{}, error) {
 		}(i)
 	}
 	fragWg.Wait()
+
+	DefaultPocketStore.RegisterBindingSitesResult(pockets, monomerPockets)
 
 	// Count interface pockets
 	interfaceCount := 0

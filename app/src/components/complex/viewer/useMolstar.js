@@ -25,11 +25,22 @@ import 'molstar/lib/mol-plugin-ui/skin/dark.scss';
  * @param {boolean} options.autoLoad — whether to load immediately (default true)
  * @returns {{ containerRef, isLoading, error, resetCamera }}
  */
-export function useMolstar({ structureUrl, label = '', autoLoad = true, highlightIndices = null, theme = 'light', representation = 'cartoon' }) {
+export function useMolstar({
+  structureUrl,
+  label = '',
+  autoLoad = true,
+  highlightIndices = null,
+  theme = 'light',
+  representation = 'cartoon',
+  conformations = null,
+  activeMode = null,
+}) {
   const containerRef = useRef(null);
   const pluginRef = useRef(null);
   const initRef = useRef(false);
   const pocketActiveRef = useRef(false); // Track if a pocket highlight is active
+  const poseStructureRefs = useRef(new Map());
+  const activeModeRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -148,10 +159,10 @@ export function useMolstar({ structureUrl, label = '', autoLoad = true, highligh
   // Update background when theme changes
   useEffect(() => {
     if (!pluginRef.current || !pluginRef.current.isInitialized) return;
-    
+
     const bgColor = theme === 'dark' ? Color(0x0a0a0a) : Color(0xffffff);
     const accentColor = theme === 'dark' ? Color(0x4ade80) : Color(0x2563eb);
-    
+
     pluginRef.current.canvas3d?.setProps({
       renderer: {
         backgroundColor: bgColor,
@@ -211,6 +222,12 @@ export function useMolstar({ structureUrl, label = '', autoLoad = true, highligh
     try {
       // Clear any existing structures
       await plugin.clear();
+      try {
+        poseStructureRefs.current.clear();
+        activeModeRef.current = null;
+      } catch (err) {
+        console.warn('[useMolstar] clear failed:', err);
+      }
 
       // Download the CIF file
       let data;
@@ -271,6 +288,103 @@ export function useMolstar({ structureUrl, label = '', autoLoad = true, highligh
     }
   };
 
+  /**
+   * Remove all preloaded pose structures. Receptor unaffected.
+   */
+  async function clearAllPoses() {
+    const plugin = pluginRef.current;
+    if (!plugin) return;
+    for (const structRef of poseStructureRefs.current.values()) {
+      await plugin.managers.structure.hierarchy.remove([structRef]);
+    }
+    poseStructureRefs.current.clear();
+    activeModeRef.current = null;
+  }
+
+  /**
+   * Preload all conformations as hidden Mol* structures.
+   * Show only the one matching initialMode. Receptor always stays visible.
+   */
+  async function preloadConformations(confs, initialMode) {
+    const plugin = pluginRef.current;
+    if (!plugin?.isInitialized) return;
+    await clearAllPoses();
+
+    for (const conf of confs) {
+      const blob = new Blob([conf.pose_pdb], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      try {
+        const data = await plugin.builders.data.download(
+          { url, isBinary: false, label: `pose_${conf.mode}` },
+          { state: { isGhost: false } }
+        );
+        const trajectory = await plugin.builders.structure.parseTrajectory(data, 'pdb');
+        await plugin.builders.structure.hierarchy.applyPreset(
+          trajectory,
+          'default',
+          {
+            structure: { name: 'model', params: {} },
+            showUnitcell: false,
+            representationPreset: 'auto',
+          }
+        );
+
+        plugin.managers.structure.hierarchy.sync(true);
+        const structures = plugin.managers.structure.hierarchy.current.structures;
+        const structRef = structures[structures.length - 1];
+        if (!structRef) continue;
+
+        const modeColors = {
+          1: Color(0xf97316),
+          2: Color(0x8b5cf6),
+          3: Color(0x06b6d4),
+        };
+        const color = modeColors[conf.mode] ?? Color(0x6b7280);
+
+        const mgr = plugin.managers.structure.component;
+        if (structRef.components?.length) {
+          for (const comp of structRef.components) {
+            await mgr.removeRepresentations([comp]);
+            await mgr.addRepresentation([comp], 'ball-and-stick');
+            await mgr.updateRepresentationsTheme([comp], {
+              color: 'uniform',
+              colorParams: { value: color },
+            });
+          }
+        }
+        poseStructureRefs.current.set(conf.mode, structRef);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    const mode0 = initialMode ?? confs[0]?.mode;
+    const hierarchy = plugin.managers.structure.hierarchy;
+    for (const [mode, structRef] of poseStructureRefs.current) {
+      const shouldShow = mode === mode0;
+      if (structRef) {
+        hierarchy.toggleVisibility([structRef], shouldShow ? 'show' : 'hide');
+      }
+    }
+    activeModeRef.current = mode0;
+  }
+
+  /**
+   * Switch visible pose to `mode`. Hide previous. Does not reset camera.
+   */
+  async function showConformation(mode) {
+    const plugin = pluginRef.current;
+    if (!plugin) return;
+    const hierarchy = plugin.managers.structure.hierarchy;
+    for (const [m, structRef] of poseStructureRefs.current) {
+      const shouldShow = m === mode;
+      if (structRef) {
+        hierarchy.toggleVisibility([structRef], shouldShow ? 'show' : 'hide');
+      }
+    }
+    activeModeRef.current = mode;
+  }
+
   const resetCamera = useCallback(() => {
     if (pluginRef.current?.managers?.camera) {
       pluginRef.current.managers.camera.reset();
@@ -315,10 +429,10 @@ export function useMolstar({ structureUrl, label = '', autoLoad = true, highligh
         );
 
         const loci = StructureSelection.toLociWithSourceUnits(sel);
-        
+
         // Apply selection to highlight it in the viewer
         plugin.managers.interactivity.lociSelects.select({ loci });
-        
+
         if (loci.elements && loci.elements.length > 0) {
           targetLoci = loci;
         }
@@ -352,15 +466,47 @@ export function useMolstar({ structureUrl, label = '', autoLoad = true, highligh
   // Synchronize highlights when indices change or structure finished loading
   useEffect(() => {
     if (!pluginRef.current || isLoading) return;
-    
+
     if (highlightIndices && highlightIndices.length > 0) {
       highlightPocket(highlightIndices);
     } else if (pocketActiveRef.current) {
       clearPocketHighlight();
     }
-  }, [highlightIndices, isLoading, highlightPocket, clearPocketHighlight]);
+  }, [highlightIndices, isLoading, highlightPocket, clearPocketHighlight, conformations, activeMode]);
 
-  return { containerRef, isLoading, error, resetCamera, highlightPocket, clearPocketHighlight };
+  // When conformations array is newly populated: preload all
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    if (!plugin || isLoading) return;
+    if (conformations?.length) {
+      const initial = activeMode ?? conformations[0]?.mode;
+      preloadConformations(conformations, initial).catch((e) =>
+        console.warn('[useMolstar] preloadConformations failed:', e)
+      );
+    } else {
+      clearAllPoses().catch((e) => console.warn('[useMolstar] clearAllPoses failed:', e));
+    }
+  }, [conformations, isLoading]);
+
+  // When activeMode changes and poses are already loaded: just switch visibility
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    if (!plugin || activeMode == null || !poseStructureRefs.current.size) return;
+    if (activeMode === activeModeRef.current) return;
+    showConformation(activeMode).catch((e) => console.warn('[useMolstar] showConformation failed:', e));
+  }, [activeMode]);
+
+  return {
+    containerRef,
+    isLoading,
+    error,
+    resetCamera,
+    highlightPocket,
+    clearPocketHighlight,
+    preloadConformations,
+    showConformation,
+    clearAllPoses,
+  };
 }
 
 /**

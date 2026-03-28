@@ -5,7 +5,7 @@ import { useMolstar } from './useMolstar';
 import { ViewerHeader } from './ViewerHeader';
 import { ViewerFooter } from './ViewerFooter';
 
-export const MolstarPanel = React.memo(forwardRef(({ structureUrl, label, plddt, description, visible = true, highlightIndices = null, representation = 'cartoon' }, ref) => {
+export const MolstarPanel = React.memo(forwardRef(({ structureUrl, label, plddt, description, visible = true, highlightIndices = null, representation = 'cartoon', conformations = null, activeMode = null }, ref) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { theme } = useTheme();
   const { containerRef, isLoading, error, highlightPocket, clearPocketHighlight } = useMolstar({
@@ -14,7 +14,9 @@ export const MolstarPanel = React.memo(forwardRef(({ structureUrl, label, plddt,
     autoLoad: visible && !!structureUrl,
     highlightIndices,
     theme,
-    representation
+    representation,
+    conformations,
+    activeMode,
   });
 
   useImperativeHandle(ref, () => ({
@@ -42,6 +44,15 @@ export const MolstarPanel = React.memo(forwardRef(({ structureUrl, label, plddt,
           className="absolute inset-0"
           style={{ width: '100%', height: '100%', position: 'absolute' }}
         />
+
+        {conformations?.length > 0 && !isLoading && !error && (
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 bg-bg-secondary/90 border border-orange-500/40 rounded backdrop-blur-sm">
+            <div className="w-2 h-2 rounded-full bg-orange-500" />
+            <span className="font-mono text-[9px] uppercase tracking-wider text-orange-400">
+              {conformations.length} poses loaded
+            </span>
+          </div>
+        )}
 
         {/* Loading overlay */}
         {isLoading && (

@@ -1,200 +1,366 @@
 package services
 
 import (
-	"compress/gzip"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"math"
 	"net/http"
+	"net/url"
+	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
-)
 
-var chemblClient = &http.Client{Timeout: 10 * time.Second}
+	"github.com/ProtPocket/models"
+)
 
 const (
-	chemblBaseURL = "https://www.ebi.ac.uk/chembl/api/data"
-	chemblOrigin  = "https://www.ebi.ac.uk"
-	// Safety cap: mechanism pagination (limit 500 per page).
-	maxMechanismPages = 40
-	mechanismPageSize = 500
+	chemblMoleculeAPI = "https://www.ebi.ac.uk/chembl/api/data/molecule.json"
+	chemblFetchLimit  = 100
+	chemblMaxResults  = 100
+	chemblHTTPTimeout = 10 * time.Second
+	mwScalingFactor   = 3.0 // pocket volume (Å³) / factor → max MW (Da) cap
+	logpTolerance     = 1.0
+	polarTolerance    = 2.0 // fpocket polarity score maps loosely to H-bond counts
+	obabelCheckTime   = 5 * time.Second
 )
 
-// chemblTargetRow is one element of /target/search.json "targets".
-type chemblTargetRow struct {
-	TargetChEMBLID   string `json:"target_chembl_id"`
-	TargetComponents []struct {
-		Accession string `json:"accession"`
-	} `json:"target_components"`
+var chemblHTTPClient = &http.Client{Timeout: chemblHTTPTimeout}
+
+var (
+	chemblPocketCacheMu sync.RWMutex
+	chemblPocketCache   = map[string][]models.Fragment{}
+)
+
+// pocketCacheKey identifies a pocket plus its geometric/chemical fingerprint for caching.
+func pocketCacheKey(p models.Pocket) string {
+	return fmt.Sprintf("%d:%.5g:%.5g:%.5g", p.PocketID, p.Volume, p.Hydrophobicity, p.Polarity)
 }
 
-// ChEMBLTargetSearchResponse matches /target/search.json response shape.
-type ChEMBLTargetSearchResponse struct {
-	Targets  []chemblTargetRow `json:"targets"`
-	PageMeta struct {
-		TotalCount int `json:"total_count"`
-	} `json:"page_meta"`
+// maxMWFromPocket maps pocket volume to a fragment MW ceiling (Daltons), clamped for fragment-likeness.
+func maxMWFromPocket(volume float64) float64 {
+	if volume <= 0 {
+		return 300
+	}
+	mw := volume / mwScalingFactor
+	if mw < 120 {
+		mw = 120
+	}
+	if mw > 300 {
+		mw = 300
+	}
+	return mw
 }
 
-// ChEMBLMechanismResponse matches /mechanism.json (paginated).
-type ChEMBLMechanismResponse struct {
-	Mechanisms []struct {
-		MaxPhase               int    `json:"max_phase"`
-		MoleculeChEMBLID       string `json:"molecule_chembl_id"`
-		ParentMoleculeChEMBLID string `json:"parent_molecule_chembl_id"`
-	} `json:"mechanisms"`
-	PageMeta struct {
-		TotalCount int    `json:"total_count"`
-		Next       string `json:"next"`
-	} `json:"page_meta"`
+// pocketMatchingTargets derives comparison targets from fpocket scores (hydrophobicity / polarity can be negative).
+func pocketMatchingTargets(p models.Pocket) (targetLogP, targetPolarHB float64) {
+	targetLogP = p.Hydrophobicity*2.0 + 1.0
+	targetPolarHB = 4.0 + p.Polarity*6.0
+	return targetLogP, targetPolarHB
 }
 
-// chemblGET performs a GET and returns the response body (handling gzip if present).
-func chemblGET(rawURL string) ([]byte, error) {
-	resp, err := chemblClient.Get(rawURL)
+type chemblMoleculeJSON struct {
+	MoleculeChemblID   string  `json:"molecule_chembl_id"`
+	PrefName           *string `json:"pref_name"`
+	MoleculeProperties *struct {
+		Alogp    string `json:"alogp"`
+		FullMwt  string `json:"full_mwt"`
+		HBA      int    `json:"hba"`
+		HBD      int    `json:"hbd"`
+		RTB      int    `json:"rtb"`
+	} `json:"molecule_properties"`
+	MoleculeStructures *struct {
+		CanonicalSmiles string `json:"canonical_smiles"`
+	} `json:"molecule_structures"`
+	MoleculeSynonyms []struct {
+		MoleculeSynonym string `json:"molecule_synonym"`
+		SynonymType     string `json:"synonym_type"`
+	} `json:"molecule_synonyms"`
+}
+
+type chemblListResponse struct {
+	Molecules []chemblMoleculeJSON `json:"molecules"`
+}
+
+func parseChemblFloat(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// estimateMW returns a rough molecular weight (Da) from SMILES when ChEMBL fields are missing.
+func estimateMW(smiles string) float64 {
+	if smiles == "" {
+		return 0
+	}
+	n := len(strings.TrimSpace(smiles))
+	if n == 0 {
+		return 0
+	}
+	// Very coarse organic average (~C10H-area): enough for ranking/fallback only.
+	return math.Min(300, math.Max(100, float64(n)*11))
+}
+
+// estimateLogP returns a neutral prior LogP when ChEMBL alogp is missing.
+func estimateLogP(smiles string) float64 {
+	if smiles == "" {
+		return 0
+	}
+	_ = smiles
+	return 1.5
+}
+
+func chemblMoleculeToFragment(m chemblMoleculeJSON) models.Fragment {
+	var f models.Fragment
+	var hasMW, hasAlogp bool
+	f.ChemblID = m.MoleculeChemblID
+	
+	// Prioritize Preferred Name, then synonyms, then ID
+	if m.PrefName != nil && strings.TrimSpace(*m.PrefName) != "" {
+		f.Name = strings.TrimSpace(*m.PrefName)
+	} else if len(m.MoleculeSynonyms) > 0 {
+		// Use the first synonym if no preferred name
+		f.Name = strings.TrimSpace(m.MoleculeSynonyms[0].MoleculeSynonym)
+	} else {
+		f.Name = m.MoleculeChemblID
+	}
+
+	if m.MoleculeStructures != nil {
+		f.SMILES = strings.TrimSpace(m.MoleculeStructures.CanonicalSmiles)
+	}
+	if m.MoleculeProperties != nil {
+		if mw, ok := parseChemblFloat(m.MoleculeProperties.FullMwt); ok {
+			f.MolWeight = mw
+			hasMW = true
+		}
+		if lp, ok := parseChemblFloat(m.MoleculeProperties.Alogp); ok {
+			f.LogP = lp
+			hasAlogp = true
+		}
+	}
+	if !hasMW && f.SMILES != "" {
+		f.MolWeight = estimateMW(f.SMILES)
+	}
+	if !hasAlogp && f.SMILES != "" {
+		f.LogP = estimateLogP(f.SMILES)
+	}
+	return f
+}
+
+func smilesPassesOpenBabel(smiles string) bool {
+	if smiles == "" {
+		return false
+	}
+	path, err := exec.LookPath("obabel")
+	if err != nil {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), obabelCheckTime)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "-:"+smiles, "-osmi", "-N", "1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		log.Printf("[chembl] obabel rejected SMILES: %v (%s)", err, strings.TrimSpace(stderr.String()))
+		return false
+	}
+	return true
+}
+
+type scoredFrag struct {
+	f     models.Fragment
+	score float64
+}
+
+func matchScore(f models.Fragment, maxMW, targetLogP, targetPolarHB float64, hba, hbd int) float64 {
+	hbSum := float64(hba + hbd)
+	dLogP := math.Abs(f.LogP - targetLogP)
+	dPol := math.Abs(hbSum - targetPolarHB)
+	dMW := 0.0
+	if f.MolWeight > maxMW {
+		dMW = f.MolWeight - maxMW
+	}
+	return dLogP + 0.15*dPol + 0.02*dMW
+}
+
+func filterAndRankChembl(raw []chemblMoleculeJSON, pocket models.Pocket) []models.Fragment {
+	maxMW := maxMWFromPocket(pocket.Volume)
+	targetLogP, targetPolarHB := pocketMatchingTargets(pocket)
+
+	var scored []scoredFrag
+	for _, m := range raw {
+		if m.MoleculeProperties == nil || m.MoleculeStructures == nil {
+			continue
+		}
+		smiles := strings.TrimSpace(m.MoleculeStructures.CanonicalSmiles)
+		if smiles == "" {
+			continue
+		}
+		if !smilesPassesOpenBabel(smiles) {
+			continue
+		}
+		f := chemblMoleculeToFragment(m)
+		if f.MolWeight > maxMW {
+			continue
+		}
+		hba, hbd := m.MoleculeProperties.HBA, m.MoleculeProperties.HBD
+		if math.Abs(f.LogP-targetLogP) > logpTolerance {
+			continue
+		}
+		hbSum := float64(hba + hbd)
+		if math.Abs(hbSum-targetPolarHB) > polarTolerance {
+			continue
+		}
+		scored = append(scored, scoredFrag{
+			f:     f,
+			score: matchScore(f, maxMW, targetLogP, targetPolarHB, hba, hbd),
+		})
+	}
+
+	if len(scored) == 0 {
+		return relaxFilterAndRank(raw, maxMW, targetLogP, targetPolarHB)
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].f.MolWeight < scored[j].f.MolWeight
+		}
+		return scored[i].score < scored[j].score
+	})
+	out := make([]models.Fragment, 0, chemblMaxResults)
+	for i := 0; i < len(scored) && len(out) < chemblMaxResults; i++ {
+		out = append(out, scored[i].f)
+	}
+	return out
+}
+
+func relaxFilterAndRank(raw []chemblMoleculeJSON, maxMW, targetLogP, targetPolarHB float64) []models.Fragment {
+	type cand struct {
+		f     models.Fragment
+		score float64
+	}
+	var all []cand
+	for _, m := range raw {
+		if m.MoleculeProperties == nil || m.MoleculeStructures == nil {
+			continue
+		}
+		smiles := strings.TrimSpace(m.MoleculeStructures.CanonicalSmiles)
+		if smiles == "" || !smilesPassesOpenBabel(smiles) {
+			continue
+		}
+		f := chemblMoleculeToFragment(m)
+		if f.MolWeight > maxMW {
+			continue
+		}
+		hba, hbd := m.MoleculeProperties.HBA, m.MoleculeProperties.HBD
+		s := matchScore(f, maxMW, targetLogP, targetPolarHB, hba, hbd)
+		all = append(all, cand{f: f, score: s})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].score == all[j].score {
+			return all[i].f.MolWeight < all[j].f.MolWeight
+		}
+		return all[i].score < all[j].score
+	})
+	out := make([]models.Fragment, 0, chemblMaxResults)
+	for i := 0; i < len(all) && len(out) < chemblMaxResults; i++ {
+		out = append(out, all[i].f)
+	}
+	return out
+}
+
+func buildChemblSearchURL(maxMW float64) string {
+	v := url.Values{}
+	v.Set("limit", "100")
+	v.Set("molecule_properties__full_mwt__lte", formatChemblFloat(maxMW))
+	return chemblMoleculeAPI + "?" + v.Encode()
+}
+
+func formatChemblFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+func fetchChemblMoleculePage(ctx context.Context, u string) ([]chemblMoleculeJSON, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := chemblHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("chembl HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("chembl HTTP %d: %s", resp.StatusCode, string(body))
 	}
-
-	var reader io.Reader = resp.Body
-	if resp.Header.Get("Content-Encoding") == "gzip" {
-		gr, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer gr.Close()
-		reader = gr
+	var parsed chemblListResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
 	}
-
-	return io.ReadAll(reader)
+	return parsed.Molecules, nil
 }
 
-func chemblNextURL(next string) string {
-	if next == "" {
-		return ""
-	}
-	if strings.HasPrefix(next, "http://") || strings.HasPrefix(next, "https://") {
-		return next
-	}
-	return chemblOrigin + next
-}
+// queryChEMBL retrieves fragment-like ChEMBL molecules, scores them against pocket descriptors, and returns up to three hits.
+func queryChEMBL(pocket models.Pocket) []models.Fragment {
+	maxMW := maxMWFromPocket(pocket.Volume)
+	u := buildChemblSearchURL(maxMW)
 
-// pickTargetChEMBLID returns the ChEMBL target id for this UniProt accession.
-// Prefers a target whose protein component accession matches uniprotID exactly.
-func pickTargetChEMBLID(targets []chemblTargetRow, uniprotID string) string {
-	for _, t := range targets {
-		for _, c := range t.TargetComponents {
-			if c.Accession == uniprotID {
-				return t.TargetChEMBLID
-			}
-		}
-	}
-	if len(targets) > 0 {
-		return targets[0].TargetChEMBLID
-	}
-	return ""
-}
+	ctx, cancel := context.WithTimeout(context.Background(), chemblHTTPTimeout)
+	defer cancel()
 
-// FetchDrugCoverage queries ChEMBL for approved drugs (max clinical phase 4) with a
-// documented mechanism on this UniProt protein.
-//
-// drugCount = -1 means ChEMBL is unreachable (unknown coverage).
-// drugCount = 0 means none found.
-//
-// Note: ChEMBL's drug_indication API does not filter by target; passing target_chembl_id
-// there is ignored and total_count reflects the whole database (~59k). We use
-// mechanism.json instead, which correctly scopes to the target.
-func FetchDrugCoverage(uniprotID string) (int, []string, error) {
-	targetURL := fmt.Sprintf("%s/target/search.json?q=%s", chemblBaseURL, uniprotID)
-	body, err := chemblGET(targetURL)
+	mols, err := fetchChemblMoleculePage(ctx, u)
 	if err != nil {
-		return -1, []string{}, nil
+		log.Printf("[chembl] fetch failed: %v", err)
+		return nil
+	}
+	if len(mols) == 0 {
+		return nil
 	}
 
-	var targetResp ChEMBLTargetSearchResponse
-	if err := json.Unmarshal(body, &targetResp); err != nil {
-		return -1, []string{}, nil
+	out := filterAndRankChembl(mols, pocket)
+	if len(out) == 0 {
+		log.Printf("[chembl] no molecules matched pocket %d after filtering", pocket.PocketID)
 	}
-
-	if len(targetResp.Targets) == 0 {
-		return 0, []string{}, nil
-	}
-
-	chemblTargetID := pickTargetChEMBLID(targetResp.Targets, uniprotID)
-	if chemblTargetID == "" {
-		return 0, []string{}, nil
-	}
-
-	// Approved drugs: documented mechanisms at clinical phase 4 for this target.
-	apvdMolecules := make(map[string]struct{})
-	pageURL := fmt.Sprintf("%s/mechanism.json?target_chembl_id=%s&max_phase=4&limit=%d",
-		chemblBaseURL, chemblTargetID, mechanismPageSize)
-
-	for page := 0; page < maxMechanismPages && pageURL != ""; page++ {
-		b, err := chemblGET(pageURL)
-		if err != nil {
-			return -1, []string{}, nil
-		}
-
-		var mechResp ChEMBLMechanismResponse
-		if err := json.Unmarshal(b, &mechResp); err != nil {
-			return -1, []string{}, nil
-		}
-
-		for _, m := range mechResp.Mechanisms {
-			if m.MaxPhase != 4 {
-				continue
-			}
-			id := m.ParentMoleculeChEMBLID
-			if id == "" {
-				id = m.MoleculeChEMBLID
-			}
-			if id != "" {
-				apvdMolecules[id] = struct{}{}
-			}
-		}
-
-		pageURL = chemblNextURL(mechResp.PageMeta.Next)
-	}
-
-	ids := make([]string, 0, len(apvdMolecules))
-	for id := range apvdMolecules {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-
-	drugNames := make([]string, 0, 5)
-	for _, mid := range ids {
-		if len(drugNames) >= 5 {
-			break
-		}
-		name, err := fetchMoleculePrefName(mid)
-		if err != nil || name == "" {
-			continue
-		}
-		drugNames = append(drugNames, name)
-	}
-
-	return len(apvdMolecules), drugNames, nil
+	return out
 }
 
-func fetchMoleculePrefName(moleculeChEMBLID string) (string, error) {
-	url := fmt.Sprintf("%s/molecule/%s.json", chemblBaseURL, moleculeChEMBLID)
-	body, err := chemblGET(url)
-	if err != nil {
-		return "", err
+// FetchFragments returns up to three ChEMBL fragments tailored to the pocket. Never returns an error;
+// failures yield an empty slice. Results are cached per pocket fingerprint.
+func FetchFragments(pocket models.Pocket) []models.Fragment {
+	key := pocketCacheKey(pocket)
+
+	chemblPocketCacheMu.RLock()
+	if cached, ok := chemblPocketCache[key]; ok {
+		chemblPocketCacheMu.RUnlock()
+		return append([]models.Fragment(nil), cached...)
 	}
-	var mol struct {
-		PrefName string `json:"pref_name"`
+	chemblPocketCacheMu.RUnlock()
+
+	frags := queryChEMBL(pocket)
+	if len(frags) == 0 {
+		return []models.Fragment{}
 	}
-	if err := json.Unmarshal(body, &mol); err != nil {
-		return "", err
-	}
-	return mol.PrefName, nil
+
+	chemblPocketCacheMu.Lock()
+	chemblPocketCache[key] = append([]models.Fragment(nil), frags...)
+	chemblPocketCacheMu.Unlock()
+
+	return append([]models.Fragment(nil), frags...)
 }

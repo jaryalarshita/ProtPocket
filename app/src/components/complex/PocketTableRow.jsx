@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { FragmentList } from './FragmentList';
+import { DockingPanel } from './DockingPanel';
 
 /**
  * PocketTableRow — displays details for a single predicted binding pocket in a table format.
  */
-export function PocketTableRow({ pocket, activeTab, isActive, onHighlight }) {
+export function PocketTableRow({ pocket, activeTab, isActive, onHighlight, proteinPdbId, onConformationChange }) {
   const [expanded, setExpanded] = useState(false);
+  const [showDocking, setShowDocking] = useState(false);
 
   const scoreColor = pocket.druggability_score >= 0.5
     ? 'text-success'
@@ -14,7 +16,7 @@ export function PocketTableRow({ pocket, activeTab, isActive, onHighlight }) {
       : 'text-text-secondary';
 
   const hasFragments = pocket.fragments && pocket.fragments.length > 0;
-  
+
   const toggleExpanded = () => setExpanded(!expanded);
 
   const displayResidues = (pocket.residue_names || []).slice(0, 3).map((r, i) => `${r}${pocket.residue_indices?.[i] || ''}`).join(', ');
@@ -80,8 +82,9 @@ export function PocketTableRow({ pocket, activeTab, isActive, onHighlight }) {
           {displayResidues}{moreResidues}
         </td>
         <td className="px-4 py-3 align-middle">
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap">
             <button
+              type="button"
               onClick={() => onHighlight?.(pocket.residue_indices)}
               className={`font-mono text-xs uppercase tracking-wider px-2 py-1 rounded border transition-colors duration-150 ${
                 isActive
@@ -92,30 +95,37 @@ export function PocketTableRow({ pocket, activeTab, isActive, onHighlight }) {
               {isActive ? '● Highlighted' : 'Highlight'}
             </button>
             <button
-              onClick={toggleExpanded}
-              className={`font-mono text-xs uppercase tracking-wider px-2 py-1 flex items-center gap-1 rounded border transition-colors duration-150 ${
-                expanded
-                  ? 'bg-bg-tertiary text-text-primary border-border hover:text-text-secondary'
-                  : 'bg-bg-tertiary text-text-secondary border-border hover:border-accent hover:text-accent'
+              type="button"
+              disabled={!proteinPdbId}
+              onClick={() => {
+                if (!proteinPdbId) return;
+                setExpanded((v) => !v);
+              }}
+              className={`font-mono text-xs uppercase tracking-wider px-2 py-1 rounded border transition-colors duration-150 ${
+                !proteinPdbId
+                  ? 'opacity-40 cursor-not-allowed border-border bg-bg-tertiary text-text-muted'
+                  : expanded
+                    ? 'bg-accent/10 text-accent border-accent/50 shadow-[0_0_0_1px_rgba(var(--color-accent-rgb),0.3)]'
+                    : 'bg-bg-tertiary text-text-secondary border-border hover:border-accent hover:text-accent font-bold'
               }`}
             >
-              {expanded ? 'Hide Details' : 'Details'} 
-              {hasFragments && ` (${pocket.fragments.length})`}
+              {expanded ? '⬡ Close Docking' : 'Dock Molecule'}
             </button>
           </div>
         </td>
       </tr>
-      
+
       {/* Expanded row for details (Fragments + Residues) */}
-      {expanded && (
+      {expanded && proteinPdbId && (
         <tr className="bg-bg-tertiary border-b border-border">
-          <td colSpan="9" className="px-4 py-4">
-             <div className="flex flex-col gap-4">
-               <div>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-text-muted mb-2 block">
-                    All Residues ({(pocket.residue_names || []).length})
+          <td colSpan="9" className="p-0">
+            <div className="p-6 bg-gradient-to-br from-bg-tertiary to-bg-secondary border-t border-border-subtle">
+              <div className="flex flex-col gap-6">
+                <div>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-text-muted mb-3 block">
+                    Pocket Surface Residues ({(pocket.residue_names || []).length})
                   </span>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5 opacity-80">
                     {(pocket.residue_names || []).map((name, idx) => (
                       <span
                         key={idx}
@@ -125,13 +135,17 @@ export function PocketTableRow({ pocket, activeTab, isActive, onHighlight }) {
                       </span>
                     ))}
                   </div>
-               </div>
-               {hasFragments && (
-                  <div className="pt-2 border-t border-border-subtle">
-                    <FragmentList fragments={pocket.fragments} />
-                  </div>
-               )}
-             </div>
+                </div>
+                
+                <div className="pt-6 border-t border-border-subtle">
+                  <DockingPanel
+                    pocket={pocket}
+                    proteinPdbId={proteinPdbId}
+                    onConformationChange={onConformationChange}
+                  />
+                </div>
+              </div>
+            </div>
           </td>
         </tr>
       )}

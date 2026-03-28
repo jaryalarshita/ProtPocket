@@ -7,7 +7,7 @@ import { ComparisonTab } from './ComparisonTab';
  * BindingSitesPanel — predicted binding sites section for the complex detail page.
  * Lazy-loads binding site data and displays pocket cards with highlighting support.
  */
-export function BindingSitesPanel({ complexId, onHighlightPocket, onClearHighlight }) {
+export function BindingSitesPanel({ complexId, onHighlightPocket, onClearHighlight, proteinPdbId, onConformationChange }) {
   const [enabled, setEnabled] = useState(true);
   const [activePocketIdx, setActivePocketIdx] = useState(null);
   const [showAll, setShowAll] = useState(false);
@@ -167,6 +167,8 @@ export function BindingSitesPanel({ complexId, onHighlightPocket, onClearHighlig
           comparison={comparison}
           activePocketIdx={activePocketIdx}
           handleHighlight={handleHighlight}
+          proteinPdbId={proteinPdbId}
+          onConformationChange={onConformationChange}
         />
       ) : (
         <>
@@ -195,6 +197,8 @@ export function BindingSitesPanel({ complexId, onHighlightPocket, onClearHighlig
                       activeTab={activeTab}
                       isActive={activePocketIdx === idx}
                       onHighlight={(residueIndices) => handleHighlight(residueIndices, idx)}
+                      proteinPdbId={proteinPdbId}
+                      onConformationChange={(confs, mode) => onConformationChange?.(confs, mode, activeTab)}
                     />
                   ))
                 ) : (

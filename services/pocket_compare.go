@@ -164,15 +164,15 @@ func ComparePockets(monomerPockets, dimerPockets []models.Pocket, monomerPLDDT m
 	monomerFrags := make(map[string]bool)
 	for _, p := range monomerPockets {
 		for _, f := range p.Fragments {
-			monomerFrags[f.ZincID] = true
+			monomerFrags[f.ChemblID] = true
 		}
 	}
 
 	dimerFragsMap := make(map[string]models.Fragment)
 	for _, p := range dimerPockets {
 		for _, f := range p.Fragments {
-			if !monomerFrags[f.ZincID] {
-				dimerFragsMap[f.ZincID] = f
+			if !monomerFrags[f.ChemblID] {
+				dimerFragsMap[f.ChemblID] = f
 			}
 		}
 	}
@@ -180,8 +180,8 @@ func ComparePockets(monomerPockets, dimerPockets []models.Pocket, monomerPLDDT m
 	interfaceFragsMap := make(map[string]models.Fragment)
 	for _, p := range result.InterfacePockets {
 		for _, f := range p.Fragments {
-			if !monomerFrags[f.ZincID] {
-				interfaceFragsMap[f.ZincID] = f
+			if !monomerFrags[f.ChemblID] {
+				interfaceFragsMap[f.ChemblID] = f
 			}
 		}
 	}

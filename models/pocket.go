@@ -22,9 +22,9 @@ type Pocket struct {
 	ResidueConfidences []ResidueConfidence `json:"residue_confidences"`
 }
 
-// Fragment represents a suggested small molecule from the ZINC database.
+// Fragment represents a suggested small molecule from ChEMBL.
 type Fragment struct {
-	ZincID     string  `json:"zinc_id"`
+	ChemblID   string  `json:"chembl_id"`
 	Name       string  `json:"name"`
 	SMILES     string  `json:"smiles"`
 	MolWeight  float64 `json:"mol_weight"`
