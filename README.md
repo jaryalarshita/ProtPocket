@@ -3,6 +3,16 @@
 
 ---
 
+## 🚀 Current Implementation Status
+
+**Phases 1-3 Completed.**
+
+- **Backend (Phase 2):** Fully running Go/GoFr API mapped at the repository root containing endpoints for search, complex details, undrugged targets dashboard, and newly added **binding site prediction** capabilities.
+- **Frontend (Phase 3):** Fully active in the `/app` directory. Built with **Vite, React 19, and Tailwind CSS** (shifted from Next.js for a more lightweight SPA architecture). Includes Mol* 3D viewer and structure reveal animations.
+- **Data (Phase 1):** 30 curated hero complexes synthesized and stored in `data/hero_complexes.json`.
+
+---
+
 ## Table of Contents
 
 1. [Problem Statement](#1-problem-statement)
@@ -75,6 +85,10 @@ Complexes with the highest disorder-to-order delta are surfaced as "Hidden Struc
 
 The AlphaFold Database gives you coordinates and confidence numbers. It gives you no meaning. We use the Claude API to synthesize a plain-English research brief per complex, pulling context from the protein's known biology, its disease associations, and its structural novelty score. This turns a structure file into an insight.
 
+### Innovation 4: The Interface Pocket Engine (fpocket + ZINC)
+
+Identifying an undrugged protein is only step one; knowing *where* to drug it is the actual bottleneck. ProtPocket integrates `fpocket` to dynamically scan the complex's 3D geometry for cavities. By cross-referencing geometric pockets with our thermodynamic **Disorder Delta**, we flag pockets that sit on residues gaining immediate stability upon dimerization (Δ pLDDT ≥ 5.0) as **Interface Pockets**—the "Holy Grail" of Protein-Protein Interaction (PPI) inhibitors. ProtPocket then queries the ZINC database to automatically suggest physical fragment compounds (leads), transforming ProtPocket from a search engine into an **end-to-end drug lead generation platform**.
+
 ---
 
 ## 3. Solution Architecture
@@ -82,7 +96,7 @@ The AlphaFold Database gives you coordinates and confidence numbers. It gives yo
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     ProtPocket UI                      │
-│         (Next.js + Mol* 3D Viewer + Tailwind)           │
+│       (Vite + React + Mol* 3D Viewer + Tailwind)        │
 └────────────────────────┬────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────┐
@@ -95,8 +109,8 @@ The AlphaFold Database gives you coordinates and confidence numbers. It gives yo
 └───────────┼───────────────────┼────────────────┼────────┘
             │                   │                │
    ┌────────▼──────┐  ┌────────▼──────┐  ┌──────▼──────┐
-   │ AlphaFold DB  │  │ ChEMBL API    │  │ PubMed API  │
-   │ REST API      │  │ (drug targets)│  │ (literature)│
+   │ AlphaFold DB  │  │ ChEMBL & ZINC │  │ PubMed API  │
+   │ REST API      │  │ (drugs/leads) │  │ (literature)│
    └───────────────┘  └───────────────┘  └─────────────┘
 ```
 
@@ -110,6 +124,8 @@ The AlphaFold Database gives you coordinates and confidence numbers. It gives yo
 6. Frontend renders search results ranked by "gap score" (high confidence + undrugged)
 7. User clicks a complex → 3D Mol* viewer loads monomer + dimer side by side
 8. Structural reveal animation plays; AI brief displayed below
+9. User runs Pocket Analysis → `fpocket` finds cavities and backend flags **Interface Pockets** (Δ pLDDT ≥ 5.0)
+10. Backend fetches fragment suggestions from ZINC; natively highlights the drug binding pocket in 3D
 
 ---
 
@@ -121,8 +137,8 @@ Every major technology choice is deliberately aligned to HackMol 7.0's sponsors 
 
 | Technology | Reason |
 |---|---|
-| **Next.js 14** (App Router) | Production-grade React, SSR for fast initial load, easy deployment to Vercel |
-| **V0 by Vercel** *(Gold Sponsor)* | Use V0 to rapidly prototype and generate the initial UI components — explicitly leverages the sponsor's tool, which judges will notice and appreciate |
+| **Vite + React 19** | Fast, modern client-side React rendering; straightforward deployment (Moved from Next.js for a simpler SPA approach). |
+| **V0 by Vercel** *(Gold Sponsor)* | Used V0 to rapidly prototype and generate the initial UI components — explicitly leverages the sponsor's tool, which judges will notice and appreciate |
 | **Tailwind CSS** | Utility-first, fast to build with, works seamlessly with V0 output |
 | **Mol* Viewer** | The industry-standard open-source 3D protein structure viewer used by PDB and AlphaFold Database itself. Embeddable as a React component. Handles PDB/mmCIF files natively. |
 | **Framer Motion** | Smooth animations for the monomer → dimer structural reveal transition |
@@ -139,6 +155,7 @@ Every major technology choice is deliberately aligned to HackMol 7.0's sponsors 
 | Technology | Reason |
 |---|---|
 | **Claude API (Anthropic)** | Powers the narrative synthesis layer — given a protein complex's metadata, generates a plain-English research brief explaining the biology, disease relevance, and drug target status |
+| **fpocket (Structural Chemistry)** | Open-source protein cavity detection algorithm based on Voronoi tessellation and alpha spheres, mathematically scanning for druggable interfaces on predicted complexes |
 | **Custom Gap Scoring Algorithm** | Our own logic: `gap_score = confidence_pLDDT × (1 - drug_coverage) × who_priority_multiplier` |
 | **Disorder Delta Computation** | Computed from per-residue pLDDT from monomer vs. complex predictions |
 
@@ -146,7 +163,7 @@ Every major technology choice is deliberately aligned to HackMol 7.0's sponsors 
 
 | Technology | Reason |
 |---|---|
-| **Vercel** *(V0 is Vercel's product — Gold Sponsor)* | Deploy Next.js frontend to Vercel for zero-config deployment with a live URL ready for demo day |
+| **Vercel** *(V0 is Vercel's product — Gold Sponsor)* | Deploy Vite frontend to Vercel for zero-config deployment with a live URL ready for demo day |
 | **Railway / Render** | Deploy GoFr backend as a containerized service |
 | **Devfolio** *(Silver Sponsor)* | Project submission platform — ensures visibility to sponsor judges |
 
@@ -155,6 +172,7 @@ Every major technology choice is deliberately aligned to HackMol 7.0's sponsors 
 | Source | What We Use |
 |---|---|
 | **AlphaFold Database REST API** | Protein structure data, pLDDT scores, complex predictions |
+| **ZINC Database API** | Chemical properties computation and fragment/lead molecule suggestions for discovered pockets |
 | **ChEMBL REST API** | Drug-target associations, approved drug coverage per protein |
 | **UniProt API** | Protein metadata, gene names, organism, disease associations |
 | **WHO Priority Pathogen List** | Hardcoded list of 19 pathogens; used as a filter multiplier |
@@ -235,7 +253,14 @@ Claude API calls are expensive per-request. We pre-generate AI briefs for our 30
 - Tone: written for a researcher, not a student — precise, citable, useful
 - Generated by Claude API with a structured prompt including pLDDT, disease associations, drug count, and organism context
 
-### Feature 5: Export & Share
+### Feature 5: Automated Binding Site & Fragment Suggestion
+
+- "Run Pocket Analysis" scans the complex for cavities using `fpocket`.
+- Flags "Interface Pockets" where geometric cavities intersect with high Disorder Delta (Δ pLDDT ≥ 5.0).
+- Queries ZINC database to automatically suggest physical fragment hit compounds.
+- Mol* 3D viewer instantly centers and highlights the optimal binding pocket natively.
+
+### Feature 6: Export & Share
 
 - "Copy cite-ready summary" button — outputs a structured summary of the complex with AlphaFold ID, gap score, and AI brief
 - Shareable URL per complex (e.g. ProtPocket.app/complex/AF-0000000066503175)
@@ -248,8 +273,8 @@ Claude API calls are expensive per-request. We pre-generate AI briefs for our 30
 
 - [ ] Read AlphaFold API docs thoroughly; test endpoints for pLDDT data
 - [ ] Test ChEMBL API for drug-target queries
-- [ ] Identify and manually curate 30 "hero" complexes (10 human disease, 10 WHO pathogens, 10 high disorder delta) — this is your demo safety net
-- [ ] Set up GitHub repo with monorepo structure: `/frontend` (Next.js) and `/backend` (Go/GoFr)
+- [x] Identify and manually curate 30 "hero" complexes (10 human disease, 10 WHO pathogens, 10 high disorder delta) — this is your demo safety net
+- [x] Set up GitHub repo with monorepo structure: `/app` (Vite/React) and root directory (Go/GoFr)
 - [ ] Get Claude API key ready; test a brief generation prompt
 - [ ] Use V0 by Vercel to generate initial UI wireframe/components (this is fast and leverages the sponsor tool)
 
