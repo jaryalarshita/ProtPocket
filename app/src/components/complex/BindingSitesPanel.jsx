@@ -8,10 +8,11 @@ import { ComparisonTab } from './ComparisonTab';
  * Lazy-loads binding site data and displays pocket cards with highlighting support.
  */
 export function BindingSitesPanel({ complexId, onHighlightPocket, onClearHighlight }) {
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(true);
   const [activePocketIdx, setActivePocketIdx] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const [activeTab, setActiveTab] = useState('monomer'); // 'monomer', 'complex', 'comparison'
+
 
   const { pockets, totalPockets, monomerPockets, monomerTotalPockets, interfaceCount, loading, error, comparison } = useBindingSites(
     complexId,

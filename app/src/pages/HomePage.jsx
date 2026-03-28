@@ -13,12 +13,12 @@ export function HomePage() {
   const stats = [
     { value: '1.7M', label: 'Complex Predictions' },
     { value: '20', label: 'Studied Species' },
-    { value: '20', label: 'WHO Priority Pathogens' },
+    { value: '15', label: 'WHO Priority Pathogen Families' },
   ];
 
   return (
     <div className="flex flex-col w-full min-h-screen">
-      
+
       {/* Section 1 — Hero */}
       <section className="w-full border-b border-border">
         <div className="max-w-[720px] mx-auto px-6 py-[96px] flex flex-col gap-8 text-center items-center">
@@ -30,11 +30,11 @@ export function HomePage() {
               Find undrugged protein complexes. Fast.
             </h1>
             <p className="font-body text-[16px] text-text-secondary leading-relaxed max-w-[600px] transition-colors duration-150">
-              ProtPocket surfaces the highest-priority undrugged targets from the new AlphaFold complex dataset. 
+              ProtPocket surfaces the highest-priority undrugged targets from the new AlphaFold complex dataset.
               We use structural gap scoring to identify targets ready for novel therapeutic design.
             </p>
           </div>
-          
+
           <div className="w-full max-w-[540px] mt-4 text-left">
             <SearchBar onSearch={handleSearch} loading={false} />
           </div>
@@ -63,7 +63,7 @@ export function HomePage() {
 
           <div className="grid grid-cols-3 gap-6">
             {DEMO_PROTEINS.map((protein) => (
-              <div 
+              <div
                 key={protein.id}
                 onClick={() => navigate(`/complex/${protein.id}`)}
                 className="flex flex-col gap-3 p-6 bg-bg-secondary border border-border rounded hover:border-accent cursor-pointer transition-colors duration-150"
