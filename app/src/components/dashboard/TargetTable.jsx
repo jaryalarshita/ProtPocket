@@ -59,7 +59,7 @@ export function TargetTable({ data = [], filter = 'all', onFilterChange }) {
               const { 
                 uniprot_id, protein_name, gene_name, organism, 
                 dimer_plddt_avg, drug_count, disorder_delta, gap_score, 
-                is_who_pathogen 
+                is_who_pathogen, review_status 
               } = row;
 
               return (
@@ -102,6 +102,7 @@ export function TargetTable({ data = [], filter = 'all', onFilterChange }) {
                   </td>
                   <td className="py-4 px-4 align-top pt-5">
                     <div className="flex flex-col gap-1.5 items-start">
+                      {review_status === 'unreviewed' && <Badge variant="unreviewed">Unreviewed</Badge>}
                       {is_who_pathogen && <Badge variant="who">WHO pathogen</Badge>}
                       {drug_count === 0 && <Badge variant="undrugged">Undrugged</Badge>}
                     </div>

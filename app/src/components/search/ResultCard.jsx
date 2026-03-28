@@ -16,7 +16,8 @@ export function ResultCard({ complex }) {
     disorder_delta,
     drug_count,
     gap_score,
-    category
+    category,
+    review_status
   } = complex;
 
   const handleCardClick = () => {
@@ -45,6 +46,7 @@ export function ResultCard({ complex }) {
           {protein_name}
         </h3>
         <div className="flex flex-row items-center gap-2 flex-wrap justify-end">
+          {review_status === 'unreviewed' && <Badge variant="unreviewed">UNREVIEWED</Badge>}
           {is_who_pathogen && <Badge variant="who">WHO PATHOGEN</Badge>}
           <Badge variant={getDrugBadgeVariant(drug_count)}>
             {getDrugBadgeText(drug_count)}

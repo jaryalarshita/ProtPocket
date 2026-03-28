@@ -21,6 +21,7 @@ type Complex struct {
     ComplexStructURL   string   `json:"complex_structure_url"`
     Category           string   `json:"category"`
     DemoHighlight      bool     `json:"demo_highlight"`
+    ReviewStatus       string   `json:"review_status"` // "reviewed" (Swiss-Prot) or "unreviewed" (TrEMBL)
 }
 
 // SearchResult wraps the search response with metadata.

@@ -8,6 +8,7 @@ export function Badge({ variant = 'unknown', children }) {
     undrugged: "text-accent bg-accent-dim border-accent",
     drugged: "text-text-muted bg-border-subtle border-border",
     unknown: "text-warning bg-warning-dim border-warning",
+    unreviewed: "text-warning bg-warning-dim border-warning",
   };
 
   const variantClass = variants[variant] || variants.unknown;

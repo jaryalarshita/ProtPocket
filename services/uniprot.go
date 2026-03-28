@@ -17,6 +17,7 @@ const uniprotBaseURL = "https://rest.uniprot.org/uniprotkb"
 
 // UniProtEntry matches the fields we need from the UniProt REST API.
 type UniProtEntry struct {
+	EntryType          string `json:"entryType"` // "Swiss-Prot" (reviewed) or "TrEMBL" (unreviewed)
 	ProteinDescription struct {
 		RecommendedName struct {
 			FullName struct {

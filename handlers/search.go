@@ -156,6 +156,12 @@ func buildComplexFromUniProt(uniprotID string) (*models.Complex, error) {
 		geneName = uniEntry.Genes[0].GeneName.Value
 	}
 
+	// Determine review status from UniProt entry type
+	reviewStatus := "unreviewed"
+	if uniEntry.EntryType == "Swiss-Prot" {
+		reviewStatus = "reviewed"
+	}
+
 	c := &models.Complex{
 		UniprotID:        uniprotID,
 		ProteinName:      uniEntry.ProteinDescription.RecommendedName.FullName.Value,
@@ -174,6 +180,7 @@ func buildComplexFromUniProt(uniprotID string) (*models.Complex, error) {
 		Category:         inferCategory(isWHO, diseases),
 		DemoHighlight:    false,
 		AlphafoldID:      afData.MonomerEntryID,
+		ReviewStatus:     reviewStatus,
 		GapScore:         0.0, // Computed after all results gathered
 	}
 

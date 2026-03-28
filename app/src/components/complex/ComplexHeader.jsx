@@ -10,7 +10,8 @@ export function ComplexHeader({ complex }) {
     uniprot_id,
     disease_associations,
     is_who_pathogen,
-    drug_count
+    drug_count,
+    review_status
   } = complex;
 
   const getDrugBadgeVariant = (count) => {
@@ -30,6 +31,7 @@ export function ComplexHeader({ complex }) {
       <div className="flex flex-row justify-between items-center">
         <span className="font-mono text-xs text-text-muted">{alphafold_id}</span>
         <div className="flex flex-row gap-2">
+          {review_status === 'unreviewed' && <Badge variant="unreviewed">UNREVIEWED (TrEMBL)</Badge>}
           {is_who_pathogen && <Badge variant="who">WHO PATHOGEN</Badge>}
           <Badge variant={getDrugBadgeVariant(drug_count)}>
             {getDrugBadgeText(drug_count)}
