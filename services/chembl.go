@@ -78,6 +78,10 @@ type chemblMoleculeJSON struct {
 	MoleculeStructures *struct {
 		CanonicalSmiles string `json:"canonical_smiles"`
 	} `json:"molecule_structures"`
+	MoleculeSynonyms []struct {
+		MoleculeSynonym string `json:"molecule_synonym"`
+		SynonymType     string `json:"synonym_type"`
+	} `json:"molecule_synonyms"`
 }
 
 type chemblListResponse struct {
@@ -122,11 +126,17 @@ func chemblMoleculeToFragment(m chemblMoleculeJSON) models.Fragment {
 	var f models.Fragment
 	var hasMW, hasAlogp bool
 	f.ChemblID = m.MoleculeChemblID
+	
+	// Prioritize Preferred Name, then synonyms, then ID
 	if m.PrefName != nil && strings.TrimSpace(*m.PrefName) != "" {
 		f.Name = strings.TrimSpace(*m.PrefName)
+	} else if len(m.MoleculeSynonyms) > 0 {
+		// Use the first synonym if no preferred name
+		f.Name = strings.TrimSpace(m.MoleculeSynonyms[0].MoleculeSynonym)
 	} else {
 		f.Name = m.MoleculeChemblID
 	}
+
 	if m.MoleculeStructures != nil {
 		f.SMILES = strings.TrimSpace(m.MoleculeStructures.CanonicalSmiles)
 	}

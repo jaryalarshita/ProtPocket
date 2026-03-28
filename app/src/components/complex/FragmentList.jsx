@@ -40,12 +40,15 @@ export function FragmentList({ fragments }) {
                 href={`https://www.ebi.ac.uk/chembl/compound_report_card/${frag.chembl_id}/`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono text-sm font-bold text-purple-400 hover:text-purple-300 hover:underline transition-colors"
+                className="font-mono text-sm font-bold text-purple-400 hover:text-purple-300 hover:underline transition-colors block truncate"
+                title={frag.name || frag.chembl_id}
               >
-                {frag.chembl_id}
+                {frag.name || frag.chembl_id}
               </a>
               {frag.name && frag.name !== frag.chembl_id && (
-                <span className="font-mono text-xs text-text-secondary">{frag.name}</span>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-text-muted">
+                  {frag.chembl_id}
+                </span>
               )}
             </div>
 

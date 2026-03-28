@@ -3,10 +3,15 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
-	"github.com/google/uuid"
+
 	"github.com/ProtPocket/models"
+	"github.com/google/uuid"
 )
 
 const maxJobs = 100
@@ -76,6 +81,16 @@ func (s *JobStore) runJob(ctx context.Context, jobID string, pocket models.Pocke
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// 2b. Download protein if URL
+	localProteinPath := proteinPDBPath
+	if isURL(proteinPDBPath) {
+		localProteinPath = filepath.Join(tmpDir, "receptor.pdb")
+		if err := downloadFile(ctx, proteinPDBPath, localProteinPath); err != nil {
+			s.updateError(jobID, fmt.Errorf("failed to download protein for docking: %w", err))
+			return
+		}
+	}
+
 	// 3. Prepare ligand 3D from SMILES
 	ligPDB, err := SMILESTo3D(ligand.SMILES, tmpDir)
 	if err != nil {
@@ -84,7 +99,7 @@ func (s *JobStore) runJob(ctx context.Context, jobID string, pocket models.Pocke
 	}
 
 	// 4. Prepare files for Vina (PDBQT conversion)
-	receptorPDBQT, err := PrepareReceptor(proteinPDBPath, tmpDir)
+	receptorPDBQT, err := PrepareReceptor(localProteinPath, tmpDir)
 	if err != nil {
 		s.updateError(jobID, fmt.Errorf("receptor prep failed: %w", err))
 		return
@@ -120,7 +135,6 @@ func (s *JobStore) runJob(ctx context.Context, jobID string, pocket models.Pocke
 	entry.Status = "done"
 	entry.BindingAffinity = res.BindingAffinity
 	entry.PosePDB = string(poseContent)
-	// We could also populate Conformations here by parsing the PDB/PDBQT into separate models if needed
 	s.results[jobID] = entry
 	s.mu.Unlock()
 }
@@ -155,4 +169,30 @@ func (s *JobStore) evictIfNeededLocked(maxLen int) {
 		s.order = s.order[1:]
 		delete(s.results, old)
 	}
+}
+
+func isURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+func downloadFile(ctx context.Context, url, dest string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
 }

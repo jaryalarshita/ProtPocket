@@ -41,7 +41,8 @@ func SMILESTo3D(smiles string, outDir string) (string, error) {
 // PrepareReceptor converts receptor PDB to PDBQT using OpenBabel
 func PrepareReceptor(pdbPath, outDir string) (string, error) {
     outPath := filepath.Join(outDir, "receptor.pdbqt")
-    cmd := exec.Command("obabel", pdbPath, "-O", outPath, "-xp") // -xp: add hydrogens
+    // Use -xr (rigid) to prevent ROOT/ENDROOT tags which Vina rejects for receptors
+    cmd := exec.Command("obabel", pdbPath, "-O", outPath, "-xr")
     var stderr bytes.Buffer
     cmd.Stderr = &stderr
     if err := cmd.Run(); err != nil {
@@ -53,7 +54,8 @@ func PrepareReceptor(pdbPath, outDir string) (string, error) {
 // PrepareLigand converts ligand 3D PDB → PDBQT
 func PrepareLigand(pdbPath, outDir string) (string, error) {
     outPath := filepath.Join(outDir, "ligand.pdbqt")
-    cmd := exec.Command("obabel", pdbPath, "-O", outPath, "-xh") // -xh: add hydrogens
+    // Use -ph 7.4 to protonate and -xh to add hydrogens for the ligand
+    cmd := exec.Command("obabel", pdbPath, "-O", outPath, "-ph", "7.4", "-xh")
     var stderr bytes.Buffer
     cmd.Stderr = &stderr
     if err := cmd.Run(); err != nil {
@@ -67,7 +69,7 @@ func RunVinaDock(receptorPDBQT, ligandPDBQT string, pocket models.Pocket, outDir
     outPDBQT := filepath.Join(outDir, "docked.pdbqt")
     outPDB := filepath.Join(outDir, "docked.pdb")
 
-    size := 20.0 // or compute from pocket volume
+    size := 25.0 // Increased size to 25.0 to handle larger interface pockets
     cmd := exec.Command(
         "vina",
         "--receptor", receptorPDBQT,
@@ -78,6 +80,8 @@ func RunVinaDock(receptorPDBQT, ligandPDBQT string, pocket models.Pocket, outDir
         "--size_x", fmt.Sprintf("%.3f", size),
         "--size_y", fmt.Sprintf("%.3f", size),
         "--size_z", fmt.Sprintf("%.3f", size),
+        "--exhaustiveness", "16",
+        "--cpu", "4",
         "--out", outPDBQT,
     )
     var stdout, stderr bytes.Buffer
