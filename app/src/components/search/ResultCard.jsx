@@ -5,7 +5,7 @@ import { GapScoreBar } from '../common/GapScoreBar';
 
 export function ResultCard({ complex }) {
   const navigate = useNavigate();
-  
+
   const {
     uniprot_id,
     protein_name,
@@ -36,7 +36,7 @@ export function ResultCard({ complex }) {
   };
 
   return (
-    <div 
+    <div
       onClick={handleCardClick}
       className="flex flex-col gap-4 p-5 bg-bg-secondary border border-border rounded hover:border-accent cursor-pointer transition-colors duration-150"
     >
@@ -75,9 +75,9 @@ export function ResultCard({ complex }) {
           </span>
         </div>
         <div className="flex flex-col items-center justify-center p-3 bg-bg-tertiary text-center">
-          <span className="font-mono text-[10px] uppercase text-text-muted mb-1">Category</span>
+          <span className="font-mono text-[10px] uppercase text-text-muted mb-1">Exists</span>
           <span className="font-mono text-[11px] text-text-primary uppercase break-words w-full">
-            {category ? category.replace(/_/g, ' ') : 'UNKNOWN'}
+            {disorder_delta > 0 ? "Both Monomer and Homodimer" : 'Monomer Only'}
           </span>
         </div>
       </div>

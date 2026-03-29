@@ -171,7 +171,7 @@ func buildComplexFromUniProt(uniprotID string) (*models.Complex, error) {
 		KnownDrugNames:   drugNames,
 		MonomerStructURL: afData.MonomerCifURL,
 		ComplexStructURL: afData.ComplexCifURL,
-		Category:         inferCategory(isWHO, diseases),
+		Category:         inferCategory(isWHO, diseases, afData.DisorderDelta),
 		DemoHighlight:    false,
 		AlphafoldID:      afData.MonomerEntryID,
 		GapScore:         0.0, // Computed after all results gathered
@@ -181,14 +181,17 @@ func buildComplexFromUniProt(uniprotID string) (*models.Complex, error) {
 }
 
 // inferCategory determines the category of a complex based on its properties.
-func inferCategory(isWHO bool, diseases []string) string {
+func inferCategory(isWHO bool, diseases []string, disorderDelta float64) string {
 	if isWHO {
 		return "who_pathogen"
 	}
 	if len(diseases) > 0 {
 		return "human_disease"
 	}
-	return "high_disorder_delta"
+	if disorderDelta > 0.0 {
+		return "high_disorder_delta"
+	}
+	return "monomer_only"
 }
 
 // sortByGapScore sorts a slice of Complex in descending order of GapScore.

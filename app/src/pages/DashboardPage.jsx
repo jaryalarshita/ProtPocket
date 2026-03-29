@@ -26,12 +26,17 @@ export function DashboardPage() {
         {loading && <LoadingState message="Fetching leaderboard data..." />}
         {error && <ErrorState message={error} />}
 
-        {!error && (
+        {!loading && !error && data && data.length > 0 && (
           <TargetTable 
             data={data} 
             filter={filter} 
             onFilterChange={setFilter} 
           />
+        )}
+        {!loading && !error && (!data || data.length === 0) && (
+          <div className="flex flex-col items-center justify-center p-12 bg-bg-secondary border border-border rounded text-center gap-2">
+            <span className="font-mono text-sm text-text-muted">No targets found for the selected filter.</span>
+          </div>
         )}
       </div>
     </div>

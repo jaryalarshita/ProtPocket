@@ -5,6 +5,7 @@ import { HomePage } from './pages/HomePage';
 import { SearchPage } from './pages/SearchPage';
 import { ComplexDetailPage } from './pages/ComplexDetailPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { Footer } from './components/layout/Footer';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
           </Routes>
         </main>
+        <Footer />
       </div>
     </Router>
   );

@@ -66,7 +66,7 @@ export function TargetTable({ data = [], filter = 'all', onFilterChange }) {
                 <tr 
                   key={uniprot_id}
                   onClick={() => navigate(`/complex/${uniprot_id}`)}
-                  className="group border-b border-border-subtle last:border-b-0 cursor-pointer hover:bg-[#BFDBFE] transition-colors duration-150"
+                  className="group border-b border-border-subtle last:border-b-0 cursor-pointer hover:bg-bg-tertiary transition-colors duration-150"
                 >
                   <td className="py-4 px-4 font-mono text-xs text-text-muted align-top pt-5">
                     {index + 1}

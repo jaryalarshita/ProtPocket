@@ -1,6 +1,6 @@
 # ProtPocket Binding Site Analysis Pipeline
 
-This document outlines the complete architectural lifecycle triggered when a user requests binding site analysis via `GET /complex/{id}/binding-sites`. The system relies on a heavily customized pipeline intersecting `fpocket` geometric void detection, AlphaFold Structural B-Factors (pLDDT approximations), and ZINC15 small-molecule databases.
+This document outlines the complete architectural lifecycle triggered when a user requests binding site analysis via `GET /complex/{id}/binding-sites`. The system relies on a heavily customized pipeline intersecting `fpocket` geometric void detection, and AlphaFold Structural B-Factors (pLDDT approximations).
 
 ---
 

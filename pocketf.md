@@ -2,7 +2,7 @@
 
 ## The Scientific Gap
 
-In modern structural biology, **AlphaFold** has revolutionized our understanding of protein shapes, and databases like **ChEMBL** or **ZINC** contain datasets of millions of synthesizable chemical compounds. However, a massive analytical gap remains: *Given a newly predicted protein structure, where exactly should a drug bind to inhibit its function, and what should that initial lead compound look like?*
+In modern structural biology, **AlphaFold** has revolutionized our understanding of protein shapes, and databases like **ChEMBL** contain datasets of millions of synthesizable chemical compounds. However, a massive analytical gap remains: *Given a newly predicted protein structure, where exactly should a drug bind to inhibit its function, and what should that initial lead compound look like?*
 
 Historically, identifying cryptic or transient binding pockets (especially at Protein-Protein Interaction interfaces) has required expensive molecular dynamics simulations or wet-lab mutagenesis. Finding a compound that binds to these specific pockets requires extensive high-throughput screening.
 
@@ -22,7 +22,7 @@ This is the scientific breakthrough of the pipeline. By cross-referencing the ge
 * These pockets are the "Holy Grail" of drug discovery: they represent allosteric sites or direct Protein-Protein Interaction (PPI) inhibitors, which are substantially more effective than standard competitive active-site inhibitors.
 
 ### 4. Automated Fragment Suggestion
-Once an Interface Pocket is identified, ProtPocket calculates the physical constraints (Volume, Hydrophobicity) and queries the ZINC physical database. The system automatically suggests lead-like small-molecule fragments (with properties like Molecular Weight and LogP) that could act as a starting scaffold for drug chemists.
+Once an Interface Pocket is identified, ProtPocket calculates the physical constraints (Volume, Hydrophobicity). The system automatically suggests lead-like small-molecule fragments (with properties like Molecular Weight and LogP) that could act as a starting scaffold for drug chemists.
 
 ---
 
@@ -37,7 +37,7 @@ graph TD
     classDef alphafold fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff
     classDef backend fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff
     classDef fpocket fill:#ef4444,stroke:#dc2626,stroke-width:2px,color:#fff
-    classDef zinc fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff
+    classDef zinc fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff;
     classDef frontend fill:#ec4899,stroke:#db2777,stroke-width:2px,color:#fff
 
     A([User searches for Q55DI5]):::user --> B{AlphaFold DB Lookup}:::alphafold
@@ -57,7 +57,7 @@ graph TD
     J -->|Yes| K[Flag as Interface Pocket]:::backend
     J -->|No| L[Mark as Standard Pocket]:::backend
     
-    K --> M[Query ZINC Database for Fragments]:::zinc
+    K --> M[Query Database for Fragments]:::zinc
     
     M --> N[Frontend renders Pocket Cards]:::frontend
     L --> N

@@ -34,6 +34,7 @@ export function useMolstar({
   representation = 'cartoon',
   conformations = null,
   activeMode = null,
+  hideControls = false,
 }) {
   const containerRef = useRef(null);
   const pluginRef = useRef(null);
@@ -59,7 +60,7 @@ export function useMolstar({
         spec.layout = {
           initial: {
             isExpanded: false,
-            showControls: true,
+            showControls: !hideControls,
             regionState: {
               bottom: 'hidden',
               left: 'hidden',
